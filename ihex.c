@@ -182,6 +182,7 @@ static int process_rec_data(ihex_ctx_t *ctx)
 	ctx->data_address = (ctx->data_buffer[1] << 8) + ctx->data_buffer[2];
 	ctx->data_address |= ctx->ext_lin_addr;
 	ctx->data_size = ctx->data_buffer[0];
+	memmove(ctx->data_buffer, &ctx->data_buffer[4], ctx->data_size);
 	return IHEX_OK;
 }
 

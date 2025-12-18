@@ -37,7 +37,7 @@
 		int err;				//	parsing error, also returned by ihex_write if non0
 		union
 		{
-			uint8_t data_buffer[(IHEX_LINE_LEN_MAX-11)/2];	// host reads data from data records here
+			uint8_t data_buffer[(IHEX_LINE_LEN_MAX-1)/2];	// host reads data from data records here
 //		Internal use:
 			char text_buffer[IHEX_LINE_LEN_MAX];
 		};

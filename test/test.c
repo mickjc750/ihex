@@ -80,7 +80,8 @@ TEST test_empty_input_accepts_all(void)
 
 TEST test_data_record_basic(void)
 {
-	const char *line = ":100000000102030405060708090A0B0C0D0E0F1068\n";
+	int r;
+	const char line[] = ":100000000102030405060708090A0B0C0D0E0F1068\n";
 	const uint8_t test_data[0x10] = {
 		0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,
 		0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,0x10
@@ -89,17 +90,16 @@ TEST test_data_record_basic(void)
 	ihex_ctx_t ctx;
 	ihex_init(&ctx);
 
-	int a = feed_bytes(&ctx, line);
-	ASSERT(a >= 0);
-
-	ASSERT_EQ(0, ctx.err);
+	r = ihex_write(&ctx, line, sizeof(line)-1);
+	ASSERT_EQ(sizeof(line)-1, r);
+	ASSERT_EQ(IHEX_OK, ctx.err);
 	ASSERT_EQ(false, ctx.eof);
 	ASSERT_EQ(0x00000000u, ctx.data_address);
 	ASSERT_EQ(0x10, ctx.data_size);
-	ASSERT_MEM_EQ(test_data, &ctx.data_buffer[4], 0x10);
+	ASSERT_MEM_EQ(test_data, ctx.data_buffer, 0x10);
 
 	// Should block until proceed
-	int r = ihex_write(&ctx, line, (int)strlen(line));
+	r = ihex_write(&ctx, line, (int)strlen(line));
 	ASSERT_EQ(0, r);
 
 	ihex_proceed(&ctx);
@@ -110,110 +110,91 @@ TEST test_data_record_basic(void)
 
 TEST test_crlf_is_accepted(void)
 {
-	const char *line = ":0100000001FE\r\n"; // LL=1, addr 0, type 0, data=01, checksum=FE
+	const char line[] = ":0100000001FE\r\n"; // LL=1, addr 0, type 0, data=01, checksum=FE
 
 	ihex_ctx_t ctx;
 	ihex_init(&ctx);
 
-	int a = feed_bytes(&ctx, line);
-	ASSERT(a >= 0);
+	int a = ihex_write(&ctx, line, sizeof(line)-1);
+	ASSERT_EQ(a , sizeof(line)-1);
 
 	ASSERT_EQ(0, ctx.err);
 	ASSERT_EQ(false, ctx.eof);
 	ASSERT_EQ(0u, ctx.data_address);
 	ASSERT_EQ(1, ctx.data_size);
-	ASSERT_EQ(0x01, ctx.data_buffer[4]);
+	ASSERT_EQ(0x01, ctx.data_buffer[0]);
 	PASS();
 }
 
 TEST test_ext_linear_address_applies_to_next_data(void)
 {
-	const char *ela  = ":020000040800F2\n";
-	const char *data = ":01000000AA55\n"; // at offset 0, data=AA (checksum 0x55)
+	int a;
+	const char ela[]  = ":020000040800F2\n";
+	const char data[] = ":01000000AA55\n"; // at offset 0, data=AA (checksum 0x55)
 
 	ihex_ctx_t ctx;
 	ihex_init(&ctx);
 
 	// ELA record should not surface data
-	int a = feed_bytes(&ctx, ela);
-	ASSERT(a >= 0);
+	a = ihex_write(&ctx, ela, sizeof(ela)-1);
+	ASSERT_EQ(sizeof(ela)-1, a);
 
 	ASSERT_EQ(0, ctx.err);
 	ASSERT_EQ(0, ctx.data_size);
 	ASSERT_EQ(false, ctx.eof);
 
 	// Now feed a data record, should come out at 0x08000000
-	a = feed_bytes(&ctx, data);
-	ASSERT(a >= 0);
+	a = ihex_write(&ctx, data, sizeof(data)-1);
+	ASSERT_EQ(sizeof(data)-1, a);
 
 	ASSERT_EQ(0, ctx.err);
 	ASSERT_EQ(0x08000000u, ctx.data_address);
 	ASSERT_EQ(1, ctx.data_size);
-	ASSERT_EQ(0xAA, ctx.data_buffer[4]);
+	ASSERT_EQ(0xAA, ctx.data_buffer[0]);
 	PASS();
 }
 
 TEST test_bad_checksum_latches_error(void)
 {
-	const char *bad = ":0100000001FF\n";
+	int a;
+	const char bad[] = ":0100000001FF\n";
 
 	ihex_ctx_t ctx;
 	ihex_init(&ctx);
 
-	int a = feed_bytes(&ctx, bad);
-	(void)a;
-
+	a = ihex_write(&ctx, bad, sizeof(bad)-1);
+	
+	ASSERT_EQ(IHEX_ERR_CHECKSUM, a);
 	ASSERT_EQ(IHEX_ERR_CHECKSUM, ctx.err);
 
 	// Further writes should return the latched error
-	int r2 = ihex_write(&ctx, bad, (int)strlen(bad));
-	ASSERT_EQ(IHEX_ERR_CHECKSUM, r2);
+	a = ihex_write(&ctx, bad, (int)strlen(bad));
+	ASSERT_EQ(IHEX_ERR_CHECKSUM, a);
 	PASS();
 }
 
 TEST test_eof_blocks_further_parsing(void)
 {
-	const char *eof  = ":00000001FF\n";
-	const char *data = ":0100000001FE\n";
+	int a;
+	const char eof[]  = ":00000001FF\n";
+	const char data[] = ":0100000001FE\n";
 
 	ihex_ctx_t ctx;
 	ihex_init(&ctx);
 
-	int a = feed_bytes(&ctx, eof);
-	ASSERT(a >= 0);
+	a = ihex_write(&ctx, eof, sizeof(eof)-1);
+	ASSERT_EQ(sizeof(eof)-1, a);
 
 	ASSERT_EQ(0, ctx.err);
 	ASSERT_EQ(true, ctx.eof);
 	ASSERT_EQ(0, ctx.data_size);
 
 	// Your contract: when EOF set, further writes return 0 (or error)
-	int r = ihex_write(&ctx, data, (int)strlen(data));
-	ASSERT_EQ(0, r);
+	a = ihex_write(&ctx, data, sizeof(data)-1);
+	ASSERT_EQ(0, a);
 	PASS();
 }
 
 //********************************************************************************************************
 // Private functions
 //********************************************************************************************************
-
-// Helper: feed a C string into ihex_write() in chunks of 1 byte (stream-like)
-// Returns total accepted bytes, or <0 on parser error, or -999 on unexpected accept count.
-static int feed_bytes(ihex_ctx_t *ctx, const char *s)
-{
-	int accepted_total = 0;
-
-	for(int i = 0; s[i] != '\0'; i++)
-	{
-		int r = ihex_write(ctx, &s[i], 1);
-		if(r < 0)
-			return r;
-		if(r != 1)
-			return -999;
-		accepted_total += r;
-
-		if(ctx->data_size != 0 || ctx->eof || ctx->err != 0)
-			break;
-	};
-
-	return accepted_total;
-}
